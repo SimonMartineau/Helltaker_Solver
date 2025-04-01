@@ -1,7 +1,26 @@
+import time
+import resource
+from colorama import init, Fore, Style
+
+# Initialize colorama
+init(autoreset=True)
+
+# Map each cell type to a specific color.
+color_map = {
+    'W': Fore.BLACK,
+    'w': Fore.CYAN,
+    'P': Fore.GREEN,
+    'E': Fore.YELLOW,
+    'S': Fore.MAGENTA,
+    'B': Fore.RED,
+    'G': Fore.WHITE  # Adjust as needed.
+}
+
 class Helltaker:
     def __init__(self, HP, Game_Grid):
         self.States_List = [Game_State(Game_Grid, HP)]
         self.Solutions = []
+        self.start_time = time.time()
 
 
     def solve(self):
@@ -16,7 +35,8 @@ class Helltaker:
                         # Check if the new state is already in self.States_List.
                         if not any(new_state.Game_Grid == existing_state.Game_Grid for existing_state in self.States_List):
                             # If not, add it to self.States_List.
-                            self.States_List.append(new_state)
+                            if new_state.passes_distance_filter():
+                                self.States_List.append(new_state)
 
                     # Mark this state as played so it won't be processed again.
                     state.Played = True
@@ -26,12 +46,39 @@ class Helltaker:
             if Game_State.Solved == True:
                 self.Solutions.append(Game_State.Instructions)
 
+
     def print_solutions(self):
         print("Number of solutions: ", len(self.Solutions))
         for i in range(0, len(self.Solutions)):
             print("Solution ", i + 1, ":")
             print(self.Solutions[i])
         print("Number of generated states: ", len(self.States_List))
+
+    
+    def print_solution_grid(self):
+        """
+        Print the grid of the 1st state in the solution list.
+        """
+        n = 0
+        for state in self.States_List:
+            if state.Solved:
+                n = self.States_List.index(state)
+                break
+
+        for row in self.States_List[n].Game_Grid:
+            # Print each cell with its corresponding color and fixed width.
+            print(" ".join(color_map.get(cell, '') + str(cell).ljust(4) for cell in row))
+
+
+    def print_analysis(self):
+        """
+        Print the analysis of the game state.
+        """
+        self.end_time = time.time()
+        print("Time taken: ", self.end_time - self.start_time, " seconds")
+
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        print("Memory usage: ", usage.ru_maxrss / 1024, " MB")
 
     
 
@@ -44,6 +91,7 @@ class Game_State:
         self.Played = False
         self.Solved = False
         self.has_key = False
+        self.player_i, self.player_j = self.get_player_pos()
 
 
     def next_turn(self):
@@ -53,8 +101,9 @@ class Game_State:
             new_state = self.copy_state()
             if new_state.player_move(move):
                 new_state.Instructions.append(move)
+                new_state.player_i, new_state.player_j = new_state.get_player_pos()
                 # Check if the new state is solved
-                if new_state.Game_Grid[new_state.get_player_pos()[0]+1][new_state.get_player_pos()[1]] == 'G' or new_state.Game_Grid[new_state.get_player_pos()[0]-1][new_state.get_player_pos()[1]] == 'G' or new_state.Game_Grid[new_state.get_player_pos()[0]][new_state.get_player_pos()[1]+1] == 'G' or new_state.Game_Grid[new_state.get_player_pos()[0]][new_state.get_player_pos()[1]-1] == 'G':
+                if new_state.Game_Grid[new_state.player_i+1][new_state.player_j] == 'G' or new_state.Game_Grid[new_state.player_i-1][new_state.player_j] == 'G' or new_state.Game_Grid[new_state.player_i][new_state.player_j+1] == 'G' or new_state.Game_Grid[new_state.player_i][new_state.player_j-1] == 'G':
                     new_state.Solved = True
                 new_states_list.append(new_state)
         return new_states_list
@@ -75,7 +124,8 @@ class Game_State:
             for j in range(len(self.Game_Grid[i])):
                 if self.Game_Grid[i][j] == 'P':
                     return (i, j)
-                
+
+
     def get_goal_pos(self):
         for i in range(len(self.Game_Grid)):
             for j in range(len(self.Game_Grid[i])):
@@ -84,9 +134,8 @@ class Game_State:
                 
 
     def get_distance_to_goal(self):
-        player_i, player_j = self.get_player_pos()
         goal_i, goal_j = self.get_goal_pos()
-        return abs(player_i - goal_i) + abs(player_j - goal_j)
+        return abs(self.player_i - goal_i) + abs(self.player_j - goal_j)
 
 
     def player_move(self, direction):
@@ -107,20 +156,18 @@ class Game_State:
         Return False for invalid move.
         """
 
-        i, j = self.get_player_pos()
-
         if direction == 'up':
-            new_i, new_j = i - 1, j
-            new_i2, new_j2 = i - 2, j
+            new_i, new_j = self.player_i - 1, self.player_j
+            new_i2, new_j2 = self.player_i - 2, self.player_j
         elif direction == 'down':
-            new_i, new_j = i + 1, j
-            new_i2, new_j2 = i + 2, j
+            new_i, new_j = self.player_i + 1, self.player_j
+            new_i2, new_j2 = self.player_i + 2, self.player_j
         elif direction == 'left':
-            new_i, new_j = i, j - 1
-            new_i2, new_j2 = i, j - 2
+            new_i, new_j = self.player_i, self.player_j - 1
+            new_i2, new_j2 = self.player_i, self.player_j - 2
         elif direction == 'right':
-            new_i, new_j = i, j + 1
-            new_i2, new_j2 = i, j + 2
+            new_i, new_j = self.player_i, self.player_j + 1
+            new_i2, new_j2 = self.player_i, self.player_j + 2
 
         # Decrease HP
         self.HP -= 1  # Decrease HP by one
@@ -133,13 +180,13 @@ class Game_State:
 
         # Check for empty space
         if self.Game_Grid[new_i][new_j] == 'E':
-            self.Game_Grid[i][j] = 'E'
+            self.Game_Grid[self.player_i][self.player_j] = 'E'
             self.Game_Grid[new_i][new_j] = 'P'
             return True
 
         # Check for keys
         if self.Game_Grid[new_i][new_j] == 'K':
-            self.Game_Grid[i][j] = 'E'
+            self.Game_Grid[self.player_i][self.player_j] = 'E'
             self.Game_Grid[new_i][new_j] = 'P'
             self.has_key = True
             return True
@@ -147,7 +194,7 @@ class Game_State:
         # Check for chests
         if self.Game_Grid[new_i][new_j] == 'C':
             if self.has_key:
-                self.Game_Grid[i][j] = 'E'
+                self.Game_Grid[self.player_i][self.player_j] = 'E'
                 self.Game_Grid[new_i][new_j] = 'P'
                 return True
             else:
@@ -157,7 +204,7 @@ class Game_State:
         if self.Game_Grid[new_i][new_j] == 'S':
             # Check if the skeleton can be pushed
             if self.Game_Grid[new_i2][new_j2] == 'E':
-                self.Game_Grid[i][j] = 'P'
+                self.Game_Grid[self.player_i][self.player_j] = 'P'
                 self.Game_Grid[new_i][new_j] = 'E'
                 self.Game_Grid[new_i2][new_j2] = 'S'
                 return True
@@ -169,12 +216,27 @@ class Game_State:
         if self.Game_Grid[new_i][new_j] == 'B':
             # Check if the block can be pushed
             if self.Game_Grid[new_i2][new_j2] == 'E':
-                self.Game_Grid[i][j] = 'P'
+                self.Game_Grid[self.player_i][self.player_j] = 'P'
                 self.Game_Grid[new_i][new_j] = 'E'
                 self.Game_Grid[new_i2][new_j2] = 'B'
                 return True
             elif self.Game_Grid[new_i2][new_j2] == 'W' or self.Game_Grid[new_i2][new_j2] == 'B' or self.Game_Grid[new_i2][new_j2] == 'S':
                 return True
+            
+
+    def passes_distance_filter(self):
+        """
+        Check if the distance to the goal is less than the distance to the closest wall.
+        """
+        
+        min_moves_left_to_do = self.get_distance_to_goal() - 1
+        if self.HP < min_moves_left_to_do:
+            self.Played = True
+            return False
+        else:
+            return True
+        
+        
 
 
         
